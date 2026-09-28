@@ -1,4 +1,4 @@
-export const DEFAULT_PROD_API = 'https://realtime-testing-dashboard.onrender.com'
+export const DEFAULT_PROD_API = 'https://salesforce-cpq-dashboard-api.onrender.com'
 export const FETCH_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 90000)
 
 export class ApiError extends Error {
@@ -12,6 +12,16 @@ export class ApiError extends Error {
 }
 
 export function getApiBaseUrl(): string {
+  // The Vercel app proxies /api to Render (vercel.json). Call that same-origin
+  // path instead of *.onrender.com. Cloudflare sits in front of Render and
+  // serves a bot challenge to some browsers — Firefox on this network is one
+  // of them. fetch() cannot finish the challenge (NetworkError), and the
+  // challenge page sends X-Frame-Options: SAMEORIGIN, so the report iframe
+  // shows "Firefox Can't Open This Page". A browser that already cleared the
+  // challenge still works, which is why another Mac can look fine.
+  if (typeof window !== 'undefined' && window.location.hostname.endsWith('.vercel.app')) {
+    return ''
+  }
   const configured = String(import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/$/, '')
   if (configured) {
     return configured
@@ -53,8 +63,10 @@ async function fetchOnce<T>(url: string, init: RequestInit, timeoutMs: number): 
     }
     const msg = e instanceof Error ? e.message : String(e)
     if ((e instanceof Error && e.name === 'AbortError') || msg.includes('aborted')) {
+      const healthOrigin =
+        getApiBaseUrl() || (typeof window !== 'undefined' ? window.location.origin : DEFAULT_PROD_API)
       throw new Error(
-        `Timed out after ${timeoutMs}ms while loading ${url}. Open ${getApiBaseUrl() || DEFAULT_PROD_API}/api/health then Retry.`,
+        `Timed out after ${timeoutMs}ms while loading ${url}. Open ${healthOrigin}/api/health then Retry.`,
       )
     }
     throw new Error(`Network/API error while loading ${url}: ${msg}`)

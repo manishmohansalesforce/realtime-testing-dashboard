@@ -40,6 +40,24 @@ app.add_middleware(
     expose_headers=['X-Data-Source'],
 )
 
+
+@app.middleware('http')
+async def allow_dashboard_report_framing(request: Request, call_next):
+    """Let the Vercel dashboard embed CI HTML reports.
+
+    frame-ancestors replaces X-Frame-Options. Without it, a SAMEORIGIN frame
+    policy (Cloudflare challenge pages, some proxies) makes Firefox refuse to
+    show the report inside the dashboard.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith('/api/runs/') and ('/report' in path or path.endswith('/html-report')):
+        response.headers['Content-Security-Policy'] = "frame-ancestors 'self' https://*.vercel.app"
+        # If an upstream proxy also set this, it would block the cross-origin embed.
+        if 'x-frame-options' in response.headers:
+            del response.headers['x-frame-options']
+    return response
+
 app.mount('/static', StaticFiles(directory=BASE_DIR / 'static'), name='static')
 if FRONTEND_DIST_DIR.exists():
     app.mount('/assets', StaticFiles(directory=FRONTEND_DIST_DIR / 'assets'), name='frontend-assets')
